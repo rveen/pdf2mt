@@ -1,0 +1,553 @@
+
+                                                          Informational
+                                                          March 2026
+
+
+           MT Format: A Hybrid Document and Data Notation
+                    Optimized for Language Model Input
+
+Status of This Memo
+
+   This document is an informational specification describing MT
+   (Markdown-Tabular), a hybrid format for encoding documents and
+   structured data intended for consumption by large language models
+   (LLMs).  Distribution is unlimited.
+
+Abstract
+
+   This document specifies MT (Markdown-Tabular), a hybrid format that
+   combines standard Markdown for document structure with a compact
+   tabular notation based on TOON (Token-Oriented Object Notation) for
+   structured data.  MT is designed to minimize token consumption while
+   preserving the semantic accuracy and structural clarity necessary for
+   reliable LLM comprehension.  The central design principle is: field
+   names appear once per table, never once per row.
+
+   MT's tabular blocks are a profile of TOON as defined in [TOON].
+   Section 5 describes a small, deliberate deviation from the TOON
+   header syntax introduced to simplify delimiter declaration.
+
+Table of Contents
+
+   1.  Introduction
+   2.  Terminology
+   3.  Format Overview
+   4.  Document Structure (Markdown)
+       4.1.  Headers
+       4.2.  Prose
+       4.3.  Document Metadata Rows
+   5.  Tabular Blocks (TOON Profile)
+       5.1.  TOON Reference
+       5.2.  Header Syntax
+       5.3.  Comma Separator
+       5.4.  Pipe Separator
+       5.5.  Deviation from TOON: Delimiter Declaration
+       5.6.  Separator Selection Rule
+       5.7.  Row Count
+       5.8.  Malformed Rows
+   6.  Format Selection Rules
+   7.  Escape Sequences
+   8.  What to Avoid
+   9.  Canonical Example
+   10. Implementation Notes
+   11. Security Considerations
+   12. References
+
+
+1.  Introduction
+
+   Large language models tokenize and process input sequentially.  The
+   choice of data encoding format therefore has a direct impact on both
+   the number of tokens consumed and the accuracy with which the model
+   can parse and reason about the content.
+
+   Common formats such as JSON, XML, and Markdown tables all suffer from
+   a fundamental inefficiency when encoding uniform arrays of objects:
+   field names are repeated for every row.  In a table of 50 standards
+   references, each with an "id" and "title" field, JSON encodes those
+   two field names 50 times.  This wastes tokens and provides no
+   additional information to the model.
+
+   MT addresses this by combining two complementary notations:
+
+   o  Standard Markdown for document hierarchy and prose, providing
+      structural context that orientates the model before data is
+      encountered.
+
+   o  Tabular blocks based on TOON [TOON] for all uniform structured
+      data, declaring the schema once per block and streaming values as
+      compact rows.
+
+   The two notations interleave freely within a single document.  A
+   Markdown section header followed by a tabular block is the canonical
+   pattern for structured sections.
+
+
+2.  Terminology
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in RFC 2119 [RFC2119].
+
+   MT         Markdown-Tabular.  The hybrid format defined by this
+              document.
+
+   TOON       Token-Oriented Object Notation.  The tabular data format
+              defined in [TOON], on which MT's tabular blocks are based.
+
+   block      A tabular block: one header line followed by one or more
+              indented data rows.
+
+   field      A named column within a tabular block.
+
+   row        A single data record within a tabular block, encoded as a
+              sequence of field values separated by the active delimiter.
+
+   separator  The character used to delimit field values within a row.
+              MT supports two separators: comma (",") and pipe ("|").
+              The separator in use is declared by the field-name list in
+              the block header.
+
+
+3.  Format Overview
+
+   An MT document is a UTF-8 text file.  Lines are separated by a
+   single LF character (U+000A); CR+LF sequences SHOULD be normalized
+   to LF before processing.
+
+   The document consists of an interleaved sequence of:
+
+   o  Markdown elements (headers, prose paragraphs, metadata rows)
+   o  Tabular blocks (TOON profile, Section 5)
+
+   No special file header, version declaration, or enclosing structure
+   is required.  The format is self-describing at the block level: each
+   tabular block carries its own schema in its header line.
+
+
+4.  Document Structure (Markdown)
+
+4.1.  Headers
+
+   MT uses standard CommonMark ATX-style headers (one to six "#"
+   characters followed by a space and the heading text) to encode
+   document hierarchy.
+
+      #      Document title (used at most once, on the first page)
+      ##     Top-level chapter or numbered section
+      ###    Subsection
+      ####   Sub-subsection
+      ...    (and so on, up to ######)
+
+   Headers MUST NOT be skipped (i.e., a ### MUST NOT appear without a
+   preceding ## at the same nesting depth).  Headers provide structural
+   orientation to the model before tabular or prose content is
+   encountered within that section.
+
+   Example:
+
+      ## 4 Safety Guidelines
+
+      ### 4.1.2 High Voltage Isolation
+
+4.2.  Prose
+
+   Narrative paragraphs, explanatory text, and any content that is not
+   uniformly structured SHOULD be encoded as plain Markdown prose.
+   Technical content MUST be preserved verbatim; summarization is not
+   permitted.
+
+   Standard Markdown inline markup (bold, italic, code spans) MAY be
+   used where it aids readability.
+
+4.3.  Document Metadata Rows
+
+   Title-page metadata (document title, issue date, revision, and
+   superseding information) SHOULD be encoded as bare pipe-delimited
+   rows immediately following the "# Document Title" header, with no
+   preceding schema comment line:
+
+      # (R) Guidelines for Medical Safety
+      Issued | 1998-06
+      Revised | 2010-03
+      Superseding | J2344 JUN1998
+
+   This construct is ONLY for document cover-page metadata.  It MUST
+   NOT be used for general structured data; tabular blocks (Section 5)
+   MUST be used instead.
+
+
+5.  Tabular Blocks (TOON Profile)
+
+5.1.  TOON Reference
+
+   MT's tabular blocks are a restricted profile of TOON v3.0 [TOON].
+   Implementors are encouraged to read the full TOON specification for
+   background on the data model, quoting rules, object encoding, nested
+   arrays, and conformance requirements.  This section defines only the
+   subset of TOON features used by MT and the single point at which MT
+   deviates from the TOON standard.
+
+   MT uses TOON's "tabular array" form (TOON Section 9.3) exclusively.
+   The following TOON features are NOT used by MT:
+
+   o  Tab delimiter
+   o  Quoted strings within tabular rows (see Section 7 for MT's
+      approach to values that would otherwise require quoting)
+   o  Nested arrays
+   o  Objects and list-item objects
+   o  Root-form primitive or object documents
+
+5.2.  Header Syntax
+
+   A tabular block consists of a single header line followed by one or
+   more data rows.
+
+   Header line syntax:
+
+      block-header  = name "[" count "]" "{" fields "}" ":" LF
+      name          = ALPHA *( ALPHA / DIGIT / "_" )
+      count         = 1*DIGIT
+      fields        = field-name *( sep field-name )
+      field-name    = 1*( ALPHA / DIGIT / "_" / "-" )
+      sep           = "," / "|"
+
+   Data row syntax:
+
+      comma-row     = SP SP field-value *( "," field-value ) LF
+      pipe-row      = SP SP field-value *( SP "|" SP field-value ) LF
+      field-value   = *( %x20-7E )     ; any printable ASCII
+
+   The two-space indent on data rows is REQUIRED.
+
+5.3.  Comma Separator
+
+   When no field value in the block contains a literal comma, the comma
+   separator SHOULD be used.  Field names in the header are separated
+   by commas; field values in each row are separated by commas.
+
+   Example:
+
+      requirements[4]{id,level,description,actions}:
+          T-01,*,Req 1, A1; A2
+          T-02,B,Req 2, A3; A4; A5
+          T-03,A,Req 3, No action needed
+          T-04,C,Req 4, A6
+
+5.4.  Pipe Separator
+
+   When any field value in the block contains a literal comma, the pipe
+   separator MUST be used for the entire block.  Field names in the
+   header are separated by "|"; field values in each row are separated
+   by " | " (space, pipe, space).  The surrounding spaces are REQUIRED
+   in data rows.
+
+   Example:
+
+      std[2]{standard|title}:
+        ISO/TC 165/SC 1 | Wood materials -- Durability and preservation
+        ISO/TC 165/WG 10 | Characteristic values and design specifications
+        ISO/TC 165/WG 11 | Solid and mechanically laminated timber products
+
+5.5.  Deviation from TOON: Delimiter Declaration
+
+   This section documents the single point at which MT's tabular block
+   syntax intentionally deviates from the TOON specification.
+
+   In canonical TOON [TOON Section 6], the active delimiter is declared
+   inside the bracket segment of the header.  For pipe-delimited arrays,
+   the TOON-conformant header is:
+
+      name[2|]{f1|f2}:
+
+   The "|" inside the brackets is the normative TOON declaration; the
+   "|" in the field list is a consequence of that declaration.  In
+   strict TOON mode, a header where the bracket declares comma (by
+   omission) but the field list uses "|" is a format error: "Mismatched
+   delimiters between bracket and brace segments MUST error in strict
+   mode." [TOON Section 6]
+
+   MT omits the delimiter symbol from the bracket segment and instead
+   infers the active delimiter solely from the separator used between
+   field names in the "{fields}" list:
+
+      name[2]{f1|f2}:      <- MT pipe-separator (bracket has no "|")
+      name[2]{f1,f2}:      <- MT comma-separator (unchanged from TOON)
+
+   Rationale: for LLM-generated output, having the delimiter appear in
+   only one location (the field list) reduces the chance of
+   inconsistency.  The bracket segment in TOON is an optimization for
+   full TOON parsers that need to identify the delimiter before reading
+   the field list; MT parsers always read the field list, making the
+   bracket symbol redundant.
+
+   Consequences:
+
+   o  MT comma-separator blocks ARE valid TOON.  A standard TOON parser
+      can read them without modification.
+
+   o  MT pipe-separator blocks are NOT valid TOON in strict mode.  A
+      TOON parser would see `name[2]{f1|f2}:` as a comma-delimited
+      array with a malformed field list.
+
+   o  Converters from MT to TOON MUST add the delimiter symbol to the
+      bracket segment: `name[2]{f1|f2}:` → `name[2|]{f1|f2}:`.
+
+5.6.  Separator Selection Rule
+
+   The following rules govern separator selection for an MT tabular
+   block:
+
+   1.  Inspect all field values across all rows in the block.
+
+   2.  If ANY value contains a literal comma (","), the pipe separator
+       MUST be used for the entire block.
+
+   3.  Otherwise, the comma separator SHOULD be used.
+
+   4.  The separator chosen for the field-name list in the header MUST
+       be the same separator used in every data row.  Mixed rows are a
+       format error.
+
+5.7.  Row Count
+
+   The "[N]" component of the block header MUST contain the exact
+   integer count of data rows in the block.  It MUST NOT be a
+   placeholder or variable.
+
+   Implementations that generate MT output MUST compute and insert the
+   correct count.  Post-processors SHOULD verify the declared count
+   against the actual number of rows and correct any discrepancy.
+
+   The row count serves as a schema anchor: it allows the model to
+   verify that it has received a complete block and to allocate the
+   correct number of parse slots before encountering the first row.
+
+5.8.  Malformed Rows
+
+   A data row is considered malformed and SHOULD be dropped by post-
+   processors under the following conditions:
+
+   o  Comma-separator block: the row ends with an unescaped comma,
+      indicating an empty last field.
+
+   o  Pipe-separator block: the row ends with " |", indicating an empty
+      last field.
+
+   After dropping malformed rows, the "[N]" count in the block header
+   MUST be updated to reflect the actual number of remaining rows.  If
+   all rows are malformed, the entire block SHOULD be dropped.
+
+
+6.  Format Selection Rules
+
+   The following table summarizes when each format element SHOULD be
+   used:
+
+   +-------------------------------------------+---------------------------+
+   | Situation                                 | Format                    |
+   +-------------------------------------------+---------------------------+
+   | Document hierarchy, section grouping      | Markdown headers          |
+   | Uniform array, any size, no commas        | TOON name[N]{f1,f2}:      |
+   | Uniform array, any size, commas in values | MT pipe  name[N]{f1|f2}:  |
+   | Document title-page metadata              | Bare pipe rows            |
+   | Deeply nested or irregular structure      | Minified JSON or YAML     |
+   | Pure flat table, no surrounding context   | CSV                       |
+   +-------------------------------------------+---------------------------+
+
+   Tabular blocks MUST be used for all uniform arrays regardless of row
+   count.  There is no minimum row threshold.  Even a single-row array
+   benefits from the schema declaration in the header.
+
+   Minified JSON or YAML MAY be used when the data is deeply nested,
+   irregularly structured, or when field presence varies across objects.
+
+   CSV MAY be used for purely tabular data that stands alone with no
+   surrounding document context and requires no schema annotation.
+
+
+7.  Escape Sequences
+
+   MT defines NO escape sequences.  This is a deliberate design
+   decision.
+
+   In TOON, when a value contains the active delimiter, the value MUST
+   be quoted [TOON Section 7.2].  MT eliminates this requirement by
+   mandating a separator switch: if any value in a block contains a
+   comma, the entire block MUST use the pipe separator.  Pipe is chosen
+   as the alternate because pipe characters are rare in technical prose
+   and tabular data.
+
+   Producers MUST NOT emit backslash-escaped commas ("\,") in MT
+   output.  If a value contains a comma, the producer MUST switch the
+   entire block to pipe separator.
+
+   Consumers encountering "\," in MT input from legacy sources MAY
+   treat the sequence as a literal comma during parsing.
+
+
+8.  What to Avoid
+
+   The following formats and practices are DISCOURAGED or PROHIBITED in
+   MT documents intended for LLM consumption:
+
+   XML
+      XML is the least token-efficient structured format in common use.
+      Every value is surrounded by opening and closing tags that repeat
+      the field name.  XML MUST NOT be used.
+
+   Pretty-printed JSON
+      In pretty-printed JSON, field names are emitted once per row per
+      field.  For a table of 50 objects with 3 fields each, 150
+      redundant field-name tokens are emitted.  Pretty-printed JSON
+      SHOULD NOT be used for uniform arrays.  Minified JSON MAY be used
+      when the structure is irregular (see Section 6).
+
+   Markdown tables
+      Standard Markdown/GFM tables require a separator row ("| --- |")
+      between the header and data rows.  This row provides no
+      information to the model and wastes tokens.  Markdown tables MUST
+      NOT be used; tabular blocks SHOULD be used instead.
+
+   Escape sequences
+      As stated in Section 7, backslash-escaped commas ("\,") MUST NOT
+      be emitted.  Use the pipe-separator tabular block instead.
+
+   Schema-comment pipe rows
+      A historically used pattern placed a schema comment line such as
+      "# field1 | field2" before pipe-delimited rows.  This pattern is
+      deprecated.  It provides no row count, offers weaker schema
+      anchoring than a block header, and requires consumers to implement
+      a separate parsing path.  Tabular blocks MUST be used instead.
+
+   Prose schema descriptions
+      Describing the fields of a table in prose when a block header
+      already declares the schema is redundant and wastes tokens.  The
+      block header is the authoritative schema declaration.
+
+
+9.  Canonical Example
+
+   The following example illustrates a complete MT document fragment
+   combining Markdown structure with tabular data blocks:
+
+      ## 4.3.2 Change classification: ANY
+
+      requirements[4]{id,level,description,actions}:
+          T-01,*,Req 1, A1; A2
+          T-02,B,Req 2, A3; A4; A5
+          T-03,A,Req 3, No action needed
+          T-04,C,Req 4, A6
+
+      ## 4.3.3 Change classification: MATERIALS
+
+      requirements[2]{id,level,description,actions}:
+        C-01,A,Any change to base material,CHK-MAT; ADD-HW[R]
+        C-02,B,Any change to coating material,CHK-PROC; RETEST
+
+   An example using the pipe separator for values that contain commas:
+
+      ### 2.1.4 ISO Publications
+
+      std[3]{standard|title}:
+        ISO/TC 165/SC 1 | Wood materials -- Durability and preservation
+        ISO/TC 165/WG 10 | Characteristic values and design specifications
+        ISO/TC 165/WG 11 | Solid and mechanically laminated timber products
+
+   In both cases the Markdown header provides section context; the
+   tabular block declares the schema once and streams values.  The
+   consumer (human or model) does not need to re-read field names for
+   each row.
+
+
+10. Implementation Notes
+
+10.1.  Token Efficiency
+
+   Benchmark measurements using the GPT-5 tokenizer (o200k_base) show
+   token savings of 30-60% for large uniform arrays when compared to
+   pretty-printed JSON.  The exact savings depend on average field-name
+   length and value density.  Savings are directionally consistent
+   across tokenizers but vary in magnitude; implementations SHOULD
+   validate savings against a representative sample before committing to
+   the format at scale.
+
+10.2.  Page-Split Continuation
+
+   When a tabular block spans a physical page boundary (e.g., during
+   PDF conversion), producers MAY emit a fresh block header at the
+   start of the continuation with the same name and field list.  Post-
+   processing implementations SHOULD merge adjacent tabular blocks that
+   share the same field count and separator into a single block,
+   updating the row count accordingly.
+
+   Two adjacent blocks with the same field count but different
+   separators MUST NOT be merged; they are structurally compatible but
+   syntactically distinct.
+
+10.3.  Row Count Correction
+
+   Post-processors MUST recompute the row count for any block whose
+   declared count does not match the actual number of valid data rows,
+   and update the header accordingly.  This corrects for both
+   placeholder counts emitted by generative producers and for rows
+   dropped during malformed-row filtering (Section 5.8).
+
+10.4.  TOON Interoperability
+
+   MT comma-separator blocks are valid TOON and can be parsed by any
+   conforming TOON implementation without modification.
+
+   MT pipe-separator blocks require a simple header transformation
+   before being passed to a strict TOON parser: insert "|" inside the
+   bracket segment.
+
+      MT:   name[2]{f1|f2}:
+      TOON: name[2|]{f1|f2}:
+
+   This transformation is mechanical and lossless.
+
+
+11. Security Considerations
+
+   MT is a text encoding format with no executable semantics.  It
+   presents no direct security risks beyond those inherent in any text
+   format.
+
+   Implementations that render MT output as HTML (e.g., by passing it
+   through a Markdown renderer) MUST apply standard HTML escaping to
+   prevent cross-site scripting (XSS) from field values that contain
+   HTML markup.
+
+   Implementations that supply MT content to an LLM in an untrusted
+   pipeline SHOULD be aware that field values may contain prompt-
+   injection payloads.  The structured nature of tabular blocks does not
+   provide immunity from prompt injection; content validation at
+   ingestion boundaries remains the producer's responsibility.
+
+
+12. References
+
+12.1.  Normative References
+
+   [TOON]      Schopplich, J., "TOON Specification v3.0",
+               Working Draft, November 2025.
+               <https://github.com/toon-format/spec/blob/main/SPEC.md>
+
+   [CommonMark] MacFarlane, J. et al., "CommonMark Specification",
+               version 0.31.2.
+               <https://spec.commonmark.org/>
+
+   [RFC2119]   Bradner, S., "Key words for use in RFCs to Indicate
+               Requirement Levels", BCP 14, RFC 2119, March 1997.
+
+12.2.  Informative References
+
+   [RFC5234]   Crocker, D. and P. Overell, "Augmented BNF for Syntax
+               Specifications: ABNF", STD 68, RFC 5234, January 2008.
+
+
+Authors' Note
+
+   The MT format was developed in the context of token-efficient
+   PDF-to-document conversion for LLM consumption.
