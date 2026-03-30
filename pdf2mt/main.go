@@ -48,6 +48,11 @@ func main() {
 		fmt.Fprintln(os.Stderr, "\n  The ANTHROPIC_API_KEY must be set in the environment.")
 		os.Exit(1)
 	}
+	
+	if *outputFile == "" {
+		fmt.Fprintln(os.Stderr, "Set an output file with -o (otherwise you could loose your money)")
+		os.Exit(1)
+	}
 
 	pdfPath := flag.Arg(0)
 	opts := &pdf2mt.Options{
