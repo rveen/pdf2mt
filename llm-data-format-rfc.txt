@@ -160,21 +160,21 @@ Table of Contents
    Standard Markdown inline markup (bold, italic, code spans) MAY be
    used where it aids readability.
 
-4.3.  Document Metadata Rows
+4.3.  Document Metadata
 
    Title-page metadata (document title, issue date, revision, and
-   superseding information) SHOULD be encoded as bare pipe-delimited
-   rows immediately following the "# Document Title" header, with no
-   preceding schema comment line:
+   superseding information) SHOULD be encoded as a TOON tabular block
+   (Section 5) immediately following the "# Document Title" header:
 
       # (R) Guidelines for Medical Safety
-      Issued | 1998-06
-      Revised | 2010-03
-      Superseding | J2344 JUN1998
+      meta[3]{key|value}:
+        Issued | 1998-06
+        Revised | 2010-03
+        Superseding | J2344 JUN1998
 
-   This construct is ONLY for document cover-page metadata.  It MUST
-   NOT be used for general structured data; tabular blocks (Section 5)
-   MUST be used instead.
+   The block name SHOULD be "meta" and the field names SHOULD be "key"
+   and "value".  This block follows the same rules as all other tabular
+   blocks defined in Section 5.
 
 
 5.  Tabular Blocks (TOON Profile)
@@ -309,6 +309,12 @@ Table of Contents
        be the same separator used in every data row.  Mixed rows are a
        format error.
 
+   Producers MAY restrict output to pipe separator only, skipping the
+   separator-selection step entirely.  The reference implementation
+   (pdf2mt) uses this strategy to reduce LLM format errors: all tabular
+   blocks are emitted with pipe separator regardless of whether field
+   values contain commas.  Parsers MUST accept both separators.
+
 5.7.  Row Count
 
    The "[N]" component of the block header MUST contain the exact
@@ -350,7 +356,7 @@ Table of Contents
    | Document hierarchy, section grouping      | Markdown headers          |
    | Uniform array, any size, no commas        | TOON name[N]{f1,f2}:      |
    | Uniform array, any size, commas in values | MT pipe  name[N]{f1|f2}:  |
-   | Document title-page metadata              | Bare pipe rows            |
+   | Document title-page metadata              | TOON meta[N]{key|value}:  |
    | Deeply nested or irregular structure      | Minified JSON or YAML     |
    | Pure flat table, no surrounding context   | CSV                       |
    +-------------------------------------------+---------------------------+

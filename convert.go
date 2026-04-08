@@ -237,39 +237,27 @@ Apply these rules to every page you receive:
    - #### and deeper for further nesting, following the document's own numbering depth
 
 2. **Document metadata** (title, issue date, revision, superseding) — emit on page 1 only.
-   Use the document title as a single # header, then the metadata as pipe-delimited rows
-   WITHOUT a schema comment line:
+   Use the document title as a single # header, then a TOON block for the metadata:
      # Document Title
-     Issued | 1998-06
-     Revised | 2010-03
-     Superseding | J2344 JUN1998
+     meta[3]{key|value}:
+       Issued | 1998-06
+       Revised | 2010-03
+       Superseding | J2344 JUN1998
 
 3. **TOON blocks** — for ANY uniform list/array of items that share the same fields,
-   regardless of row count (even 1–4 rows):
-   - When no values contain commas (comma separator): use commas in {fields} and rows:
-       name[N]{field1,field2,...}:
-         value1,value2,...
-   - When any value contains a comma (pipe separator): use pipes in {fields} and rows:
+   regardless of row count (even 1–4 rows). Always use pipe separator:
        name[N]{field1|field2|...}:
          value1 | value2 | ...
    Rules:
-   - The separator used between field names in {fields} is the same separator used in
-     every data row — commas in the header means comma-separated rows, pipes means pipe.
+   - Always use pipe (|) between field names and between row values.
    - N must be the exact integer count of rows in this block (never the letter N).
-   - Choose separator based on the data: if ANY value in the block contains a comma,
-     use pipe separator for the entire block; otherwise use comma separator.
-   - Never use escape sequences (\,) — use pipe separator instead.
-   - Never mix comma-rows and pipe-rows within one block.
    - If a list spans a page break, start a fresh TOON block with the same header
      for the remaining rows; they will be merged automatically in post-processing.
 
-4. **Pipe-delimited rows** — use ONLY for document metadata (rule 2). Do not use
-   standalone pipe rows for any other purpose; use TOON blocks instead.
-
-5. **Plain Markdown prose** — for narrative paragraphs, guidelines, explanations.
+4. **Plain Markdown prose** — for narrative paragraphs, guidelines, explanations.
    Preserve all technical detail verbatim. Do not summarize.
 
-6. **Figures** — replace with a single line: > [Figure N: brief description]
+5. **Figures** — replace with a single line: > [Figure N: brief description]
 
 ## What to omit
 
@@ -529,23 +517,20 @@ func assemble(sections []string) string {
 	return fixTOON(sb.String()) + "\n"
 }
 
-// reTOONHeader matches a TOON block header line, e.g. "ref[11]{number,title}:"
-// or "name[N]{std|title}:". Capture groups: (1) name, (2) count-or-N, (3) fields.
-// The separator used between field names in {fields} determines the row separator:
-// comma-separated fields → comma-separated rows; pipe-separated fields → pipe-separated rows.
+// reTOONHeader matches a TOON block header line, e.g. "name[N]{std|title}:".
+// Capture groups: (1) name, (2) count-or-N, (3) fields.
+// pdf2mt always emits pipe-separator blocks; field names are separated by "|".
 var reTOONHeader = regexp.MustCompile(`^(\w+)\[(\d+|N)\]\{([^}]+)\}:\s*$`)
 
 // fixTOON post-processes the assembled text:
-//   - Merges adjacent TOON blocks with the same field count and separator (page-boundary splits).
-//   - Drops malformed rows whose last field is empty (trailing unescaped comma for
-//     comma-separator blocks; trailing " |" for pipe-separator blocks).
+//   - Merges adjacent TOON blocks with the same field count (page-boundary splits).
+//   - Drops malformed rows whose last field is empty (trailing " |").
 //   - Replaces every [N] placeholder and any stale count with the real row count.
 func fixTOON(text string) string {
 	type toon struct {
 		name   string
 		fields string
 		nf     int
-		pipe   bool
 		rows   []string
 	}
 
@@ -560,12 +545,8 @@ func fixTOON(text string) string {
 		}
 		valid := cur.rows[:0]
 		for _, r := range cur.rows {
-			t := strings.TrimSpace(r)
-			if !cur.pipe && strings.HasSuffix(t, ",") && !strings.HasSuffix(t, `\,`) {
-				continue // comma mode: trailing unescaped comma means empty last field
-			}
-			if cur.pipe && strings.HasSuffix(t, " |") {
-				continue // pipe mode: trailing " |" means empty last field
+			if strings.HasSuffix(strings.TrimSpace(r), " |") {
+				continue // trailing " |" means empty last field
 			}
 			valid = append(valid, r)
 		}
@@ -580,22 +561,16 @@ func fixTOON(text string) string {
 	for _, line := range lines {
 		if m := reTOONHeader.FindStringSubmatch(line); m != nil {
 			name, fields := m[1], m[3]
-			pipe := strings.Contains(fields, "|")
-			var nf int
-			if pipe {
-				nf = strings.Count(fields, "|") + 1
-			} else {
-				nf = strings.Count(fields, ",") + 1
-			}
+			nf := strings.Count(fields, "|") + 1
 
-			if cur != nil && cur.nf == nf && cur.pipe == pipe {
-				// Same field count and separator — continuation; drop inter-block blanks.
+			if cur != nil && cur.nf == nf {
+				// Same field count — continuation block; drop inter-block blanks.
 				pendingBlanks = nil
 			} else {
 				flush()
 				out = append(out, pendingBlanks...)
 				pendingBlanks = nil
-				cur = &toon{name: name, fields: fields, nf: nf, pipe: pipe}
+				cur = &toon{name: name, fields: fields, nf: nf}
 			}
 		} else if cur != nil && strings.HasPrefix(line, "  ") {
 			// TOON data row.

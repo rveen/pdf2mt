@@ -5,28 +5,6 @@ import (
 	"testing"
 )
 
-// Malformed rows with trailing comma (empty last field) are dropped.
-func TestFixTOON_dropTrailingCommaRows(t *testing.T) {
-	input := "name[30]{standard,title}:\n" +
-		"  SAE J1715,Hybrid Electric Vehicle (HEV) & Electric Vehicle (EV) Terminology\n" +
-		"  Format Guidelines Manual for the Electronic Capture of SAE Ground Vehicle Documents,\n" +
-		"  SAE Committee Guidelines Manual,\n" +
-		"  SAE J2574,Fuel Cell Vehicle Terminology\n"
-	got := fixTOON(input)
-	if strings.Contains(got, "Format Guidelines Manual") {
-		t.Errorf("malformed row should be dropped, got:\n%s", got)
-	}
-	if strings.Contains(got, "SAE Committee Guidelines Manual,\n") {
-		t.Errorf("malformed row should be dropped, got:\n%s", got)
-	}
-	if !strings.Contains(got, "SAE J2574") {
-		t.Errorf("valid row must be kept, got:\n%s", got)
-	}
-	if !strings.Contains(got, "name[2]{standard,title}:") {
-		t.Errorf("count should reflect 2 remaining valid rows, got:\n%s", got)
-	}
-}
-
 // Pipe-separator header {f1|f2} is recognized, rows preserved, [N] count updated.
 func TestFixTOON_pipeSeparatorHeader(t *testing.T) {
 	input := "std[N]{standard|title}:\n" +
@@ -57,23 +35,6 @@ func TestFixTOON_mergePipeSeparatorBlocks(t *testing.T) {
 	}
 }
 
-// Same field count but different separators ({a,b} vs {a|b}) must NOT merge.
-func TestFixTOON_noMergeAcrossSeparatorMismatch(t *testing.T) {
-	input := "tbl[2]{a,b}:\n" +
-		"  x,y\n" +
-		"  p,q\n" +
-		"\n" +
-		"tbl[1]{a|b}:\n" +
-		"  foo | bar with, comma\n"
-	got := fixTOON(input)
-	if !strings.Contains(got, "tbl[2]{a,b}:") {
-		t.Errorf("comma block should be flushed with its own count, got:\n%s", got)
-	}
-	if !strings.Contains(got, "tbl[1]{a|b}:") {
-		t.Errorf("pipe block should be separate, got:\n%s", got)
-	}
-}
-
 // Pipe row with empty last field (trailing " |") is dropped.
 func TestFixTOON_dropMalformedPipeRow(t *testing.T) {
 	input := "tbl[2]{a|b}:\n" +
@@ -88,17 +49,33 @@ func TestFixTOON_dropMalformedPipeRow(t *testing.T) {
 	}
 }
 
-// A standalone "foo | bar" line after a comma-mode TOON block is NOT absorbed.
+// A standalone "foo | bar" line after a TOON block is NOT absorbed as a data row.
 func TestFixTOON_noAbsorbStandalonePipe(t *testing.T) {
-	input := "name[1]{id,title}:\n" +
-		"  ISO 1234,Some title\n" +
+	input := "name[1]{id|title}:\n" +
+		"  ISO 1234 | Some title\n" +
 		"\n" +
 		"ISO 5678 | Another title\n"
 	got := fixTOON(input)
-	if !strings.Contains(got, "name[1]{id,title}:") {
-		t.Errorf("comma block should have count 1, got:\n%s", got)
+	if !strings.Contains(got, "name[1]{id|title}:") {
+		t.Errorf("pipe block should have count 1, got:\n%s", got)
 	}
 	if !strings.Contains(got, "ISO 5678 | Another title") {
 		t.Errorf("standalone pipe line should remain as prose, got:\n%s", got)
+	}
+}
+
+// Document metadata encoded as a TOON block is processed like any other block.
+func TestFixTOON_metadataTOONBlock(t *testing.T) {
+	input := "# My Document\n" +
+		"meta[N]{key|value}:\n" +
+		"  Issued | 2020-01\n" +
+		"  Revised | 2023-06\n" +
+		"  Superseding | DOC-001\n"
+	got := fixTOON(input)
+	if !strings.Contains(got, "meta[3]{key|value}:") {
+		t.Errorf("metadata TOON block count should be updated to 3, got:\n%s", got)
+	}
+	if !strings.Contains(got, "Issued | 2020-01") {
+		t.Errorf("metadata rows should be preserved, got:\n%s", got)
 	}
 }

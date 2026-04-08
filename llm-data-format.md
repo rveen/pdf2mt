@@ -12,9 +12,9 @@ Use `#`, `##`, `###` (and so on), for document hierarchy and section context. He
 
 ### TOON tabular blocks
 
-Use for any uniform array of objects with a fixed schema, regardless of row count. Declare field names once in the header, stream values as rows. Choose the row separator based on whether values contain commas:
+Use for any uniform array of objects with a fixed schema, regardless of row count. Declare field names once in the header, stream values as rows. Two separator variants are defined:
 
-**Comma separator** (default — when no values contain commas):
+**Comma separator** (when no values contain commas):
 
 ```
 requirements[4]{id,level,description,actions}:
@@ -40,15 +40,18 @@ Rules:
 - No escape sequences — use the pipe separator instead of `\,`
 - Token savings vs. JSON: 30–60% for large uniform arrays; the `[N]` count and `{fields}` header also improve parsing accuracy
 
-### Document metadata rows
+> **pdf2mt canonical output:** The reference producer (`pdf2mt`) always emits pipe-separator TOON, regardless of whether values contain commas. This eliminates the separator-selection decision for LLM-generated output, avoiding a common source of format errors. Parsers MUST accept both separators; producers MAY restrict themselves to pipe-only.
 
-Use bare pipe-delimited rows (no schema comment line) exclusively for title-page metadata:
+### Document metadata
+
+Document title-page metadata (title, issue date, revision, superseding) is encoded as a TOON block, like any other table:
 
 ```
 # Document Title
-Issued | 1998-06
-Revised | 2010-03
-Superseding | J2344 JUN1998
+meta[3]{key|value}:
+  Issued | 1998-06
+  Revised | 2010-03
+  Superseding | J2344 JUN1998
 ```
 
 
