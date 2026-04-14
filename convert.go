@@ -25,11 +25,8 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
-	"strconv"
 	"strings"
 )
 
@@ -174,52 +171,6 @@ func ConvertPDF(ctx context.Context, pdfPath string, opts *Options) (string, err
 	}
 
 	return result, nil
-}
-
-// ----------------------------------------------------------------- rasterizer
-
-// rasterizePages converts every page of the PDF to a PNG file in tmpDir using
-// pdftoppm (part of poppler-utils). Returns paths sorted by page order.
-func rasterizePages(pdfPath string, dpi int, tmpDir string) ([]string, error) {
-	prefix := filepath.Join(tmpDir, "page")
-	cmd := exec.Command("pdftoppm",
-		"-r", strconv.Itoa(dpi),
-		"-png",
-		pdfPath,
-		prefix,
-	)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return nil, fmt.Errorf("pdftoppm: %w: %s", err, out)
-	}
-
-	matches, err := filepath.Glob(prefix + "-*.png")
-	if err != nil || len(matches) == 0 {
-		return nil, fmt.Errorf("no pages produced by pdftoppm")
-	}
-	sort.Strings(matches)
-	return matches, nil
-}
-
-// rasterizePage rasterizes a single page of the PDF at the given DPI and returns
-// the PNG bytes. pageNum is 1-based.
-func rasterizePage(pdfPath string, dpi, pageNum int, tmpDir string) ([]byte, error) {
-	prefix := filepath.Join(tmpDir, fmt.Sprintf("hires-p%d", pageNum))
-	cmd := exec.Command("pdftoppm",
-		"-r", strconv.Itoa(dpi),
-		"-png",
-		"-f", strconv.Itoa(pageNum),
-		"-l", strconv.Itoa(pageNum),
-		pdfPath,
-		prefix,
-	)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return nil, fmt.Errorf("pdftoppm: %w: %s", err, out)
-	}
-	matches, err := filepath.Glob(prefix + "-*.png")
-	if err != nil || len(matches) == 0 {
-		return nil, fmt.Errorf("no output from pdftoppm for page %d", pageNum)
-	}
-	return os.ReadFile(matches[0])
 }
 
 // ----------------------------------------------------------------- Claude API
